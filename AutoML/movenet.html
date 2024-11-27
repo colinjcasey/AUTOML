@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoveNet Pose Detection</title>
+  <style>
+    body {
+      text-align: center;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      border: 1px solid black;
+    }
+  </style>
+</head>
+<body>
+  <h1>MoveNet Pose Detection</h1>
+  <video id="video" width="640" height="480" autoplay muted></video>
+  <canvas id="output" width="640" height="480"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('output');
+    const ctx = canvas.getContext('2d');
+
+    async function setupCamera() {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        return new Promise((resolve) => {
+          video.onloadedmetadata = () => {
+            resolve(video);
+          };
+        });
+      } else {
+        alert("Camera not supported on this browser.");
+      }
+    }
+
+    async function loadModelAndDetectPose() {
+      const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
+      const detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
+
+      console.log("MoveNet model loaded!");
+      detectPose(detector);
+    }
+
+    async function detectPose(detector) {
+      const poses = await detector.estimatePoses(video);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Draw keypoints and skeleton
+      if (poses && poses.length > 0) {
+        for (const pose of poses) {
+          for (const keypoint of pose.keypoints) {
+            if (keypoint.score > 0.5) {
+              ctx.beginPath();
+              ctx.arc(keypoint.x, keypoint.y, 5, 0, 2 * Math.PI);
+              ctx.fillStyle = "red";
+              ctx.fill();
+            }
+          }
+        }
+      }
+
+      requestAnimationFrame(() => detectPose(detector));
+    }
+
+    async function main() {
+      await setupCamera();
+      video.play();
+      await loadModelAndDetectPose();
+    }
+
+    main();
+  </script>
+</body>
+</html>

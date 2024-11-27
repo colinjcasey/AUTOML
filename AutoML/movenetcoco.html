@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" type="image/x-icon" href="favicon.png">
+    <meta name="description" content="Casey Capital U.S">
+    <meta name="description" content="Casey Capital US - Growth For Generations">
+    <title>CaseyCapitalUS AI</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+            background-color: black;
+            color: white;
+        }
+        canvas {
+            border: 1px solid black;
+        }
+
+        #splash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.93);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            z-index: 9999;
+            padding-top: 100px;
+        }
+
+        #splash.hidden {
+            display: none;
+        }
+
+        #container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px; /* Space between items */
+            margin: 20px 0;
+        }
+
+        video, canvas {
+            max-width: 100%;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        video {
+            flex: 1 1 45%; /* Take up 45% of the row */
+        }
+
+        canvas {
+            flex: 1 1 45%; /* Take up 45% of the row */
+        }
+
+        #controls {
+            margin: 20px 0;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        .start-btn {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .stop-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        button:disabled {
+            background-color: gray;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div id="splash">Loading models, please wait...</div>
+    <h1>Object and Human Pose Detection</h1>
+    <div id="controls">
+        <button id="startButton" class="start-btn" disabled>Start Camera</button>
+        <button id="stopButton" class="stop-btn" disabled>Stop Camera</button>
+    </div>
+    <video id="video" width="640" height="100%" autoplay muted></video>
+    <canvas id="output" width="640" height="480"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+    <script>
+        const splash = document.getElementById('splash');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('output');
+        const ctx = canvas.getContext('2d');
+
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+
+        let cocoModel;
+        let poseDetector;
+        let isDetecting = false;
+        let videoStream = null;
+
+        async function setupCamera() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = videoStream;
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve(video);
+                    };
+                });
+            } else {
+                alert("Camera not supported on this browser.");
+            }
+        }
+
+        async function loadModels() {
+            cocoModel = await cocoSsd.load();
+            console.log("COCO-SSD model loaded!");
+
+            const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
+            poseDetector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
+            console.log("MoveNet model loaded!");
+            splash.classList.add('hidden');
+
+            // Enable the Start Camera button
+            startButton.disabled = false;
+        }
+
+        async function detectObjectsAndPoses() {
+            if (!isDetecting) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Run COCO-SSD for object detection
+            const predictions = await cocoModel.detect(video);
+
+            for (const prediction of predictions) {
+                const [x, y, width, height] = prediction.bbox;
+
+                // Draw bounding box and label
+                ctx.strokeStyle = "blue";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, width, height);
+                ctx.font = "16px Arial";
+                ctx.fillStyle = "blue";
+                ctx.fillText(`${prediction.class} (${(prediction.score * 100).toFixed(1)}%)`, x, y > 10 ? y - 5 : y + 15);
+
+                // If the detected object is a person, run MoveNet for pose detection
+                if (prediction.class === "person") {
+                    const croppedRegion = {
+                        sx: x,
+                        sy: y,
+                        sWidth: width,
+                        sHeight: height,
+                        dx: 0,
+                        dy: 0,
+                        dWidth: canvas.width,
+                        dHeight: canvas.height
+                    };
+
+                    // Estimate poses for the person
+                    const poses = await poseDetector.estimatePoses(video, { croppedArea: croppedRegion });
+
+                    // Draw keypoints
+                    if (poses && poses.length > 0) {
+                        for (const pose of poses) {
+                            for (const keypoint of pose.keypoints) {
+                                if (keypoint.score > 0.5) {
+                                    ctx.beginPath();
+                                    ctx.arc(keypoint.x, keypoint.y, 5, 0, 2 * Math.PI);
+                                    ctx.fillStyle = "red";
+                                    ctx.fill();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            requestAnimationFrame(detectObjectsAndPoses);
+        }
+
+        async function startDetection() {
+            await setupCamera();
+            video.play();
+            isDetecting = true;
+            detectObjectsAndPoses();
+
+            // Enable the Stop Camera button and disable Start Camera button
+            stopButton.disabled = false;
+            startButton.disabled = true;
+        }
+
+        function stopDetection() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+            isDetecting = false;
+
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Enable the Start Camera button and disable Stop Camera button
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        }
+
+        async function main() {
+            splash.textContent = "Loading models, please wait...";
+            await loadModels();
+        }
+
+        startButton.addEventListener('click', startDetection);
+        stopButton.addEventListener('click', stopDetection);
+
+        main();
+    </script>
+</body>
+</html>

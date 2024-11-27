@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CaseyCapital AI Object Detection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f9;
+            padding: 20px;
+            color: #333;
+        }
+
+        h1 {
+            color: #444;
+            margin-bottom: 20px;
+        }
+
+        #controls {
+            margin-bottom: 20px;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        #container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px; /* Space between items */
+            margin: 20px 0;
+        }
+
+        video, canvas {
+            max-width: 100%;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        video {
+            flex: 1 1 45%; /* Take up 45% of the row */
+        }
+
+        canvas {
+            flex: 1 1 45%; /* Take up 45% of the row */
+        }
+
+        @media (max-width: 768px) {
+            video, canvas {
+                flex: 1 1 100%; /* Stacked layout on small screens */
+            }
+        }
+
+        #status {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>CaseyCapital AI Object Detection</h1>
+    <div id="controls">
+        <button id="startWebcam">Start Webcam</button>
+        <button id="stopWebcam" disabled>Stop Webcam</button>
+    </div>
+    <div id="container">
+        <video id="webcam" autoplay playsinline width="640" height="480" style="display: none;"></video>
+        <canvas id="outputCanvas" width="640" height="480"></canvas>
+    </div>
+    <p id="status">Status: Loading model...</p>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.15.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script>
+        let model;
+        let video;
+        let isModelReady = false;
+        let webcamStream = null;
+        let isDetecting = false;
+
+        async function loadModel() {
+            // Load the COCO-SSD model
+            model = await cocoSsd.load();
+            document.getElementById('status').textContent = "Status: Model loaded!";
+            isModelReady = true;
+        }
+
+        async function setupWebcam() {
+            video = document.getElementById('webcam');
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                try {
+                    webcamStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    video.srcObject = webcamStream;
+                    video.style.display = "block";
+
+                    // Enable the Stop Webcam button
+                    document.getElementById('stopWebcam').disabled = false;
+                    document.getElementById('startWebcam').disabled = true;
+
+                    video.addEventListener('loadeddata', () => {
+                        isDetecting = true;
+                        detectObjects();
+                    });
+                } catch (err) {
+                    console.error("Error accessing webcam:", err);
+                }
+            } else {
+                alert("Your browser does not support webcam access.");
+            }
+        }
+
+        async function stopWebcam() {
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamStream = null;
+                video.style.display = "none";
+
+                // Disable the Stop Webcam button
+                document.getElementById('stopWebcam').disabled = true;
+                document.getElementById('startWebcam').disabled = false;
+
+                isDetecting = false;
+                clearCanvas();
+                document.getElementById('status').textContent = "Status: Webcam stopped.";
+            }
+        }
+
+        function clearCanvas() {
+            const canvas = document.getElementById('outputCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        const loggedObjects = new Set(); // To keep track of logged objects
+const loggingCooldown = new Map(); // To throttle logging per object
+const LOG_INTERVAL_MS = 2000; // Log once per object every 2 seconds
+
+async function detectObjects() {
+    const canvas = document.getElementById('outputCanvas');
+    const ctx = canvas.getContext('2d');
+
+    if (isModelReady && isDetecting) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const predictions = await model.detect(video);
+
+        predictions.forEach(prediction => {
+            const objectKey = `${prediction.class}-${Math.round(prediction.score * 10)}`; // Round score to 1 decimal place
+
+            // Check if the object has been logged recently
+            const now = Date.now();
+            if (!loggedObjects.has(objectKey) || now - (loggingCooldown.get(objectKey) || 0) > LOG_INTERVAL_MS) {
+                console.log("New object detected:", prediction);
+                loggedObjects.add(objectKey); // Add to the set
+                loggingCooldown.set(objectKey, now); // Update last logged time
+            }
+
+            // Draw predictions
+            const [x, y, width, height] = prediction.bbox;
+            ctx.strokeStyle = "#00FF00";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, width, height);
+            ctx.font = "16px Arial";
+            ctx.fillStyle = "#00FF00";
+            ctx.fillText(
+                `${prediction.class} (${(prediction.score * 100).toFixed(1)}%)`,
+                x,
+                y > 10 ? y - 5 : y + 15
+            );
+        });
+
+        requestAnimationFrame(detectObjects);
+    }
+}
+
+
+
+        document.getElementById('startWebcam').addEventListener('click', async () => {
+            document.getElementById('status').textContent = "Status: Starting webcam...";
+            await setupWebcam();
+        });
+
+        document.getElementById('stopWebcam').addEventListener('click', () => {
+            stopWebcam();
+        });
+
+        loadModel();
+    </script>
+</body>
+</html>
