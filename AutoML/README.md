@@ -1,9 +1,11 @@
 # CREATED USING TENSOR FLOW 
 
 # SETUP 
-1.) Download Repo 
-2.) cd into project directory
-3.) Start the server: ** npx http-server ** 
+ 1.) Download Repo 
+ 
+ 2.) Cd into project directory
+
+ 3.) Start the server:  npx http-server  
 
 
 This project is using the TensorFlow MoveNet model to detect human poses combined with the COCO SSD model to detect objects. 
